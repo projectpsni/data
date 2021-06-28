@@ -1,6 +1,3 @@
-
-
-
 export default class User {
   readonly id: string;
   name: string|null;
