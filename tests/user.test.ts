@@ -15,12 +15,12 @@ describe("User", () => {
     expect(data).toHaveProperty('id');
     expect(data).toHaveProperty('email');
     expect(data).toHaveProperty('name');
-    expect(data).toHaveProperty('roles');
+    expect(data).toHaveProperty('picture');
 
     expect(data.id).toBe(usr.id);
     expect(data.email).toBe(usr.email);
     expect(data.name).toBe(usr.name);
-    expect(data.roles).toBe(usr.roles);
+    expect(data.picture).toBe(usr.picture);
   })
 
 })
