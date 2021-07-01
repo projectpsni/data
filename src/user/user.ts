@@ -37,7 +37,7 @@ export default class User implements IModel {
   }
 
   get picture():string|null {
-    return this.#name
+    return this.#picture;
   }
   
   set picture(picture:string|null) {
