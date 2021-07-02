@@ -1,18 +1,25 @@
 import IRoleRepository from "./role_repository";
 import { Pool } from 'pg';
 import Role from "./role";
+import { ICache } from "../common";
 
 export default class PG_Role_Repository implements IRoleRepository {
 
   #pool:Pool;
+  #cache?: ICache;
+  #context?: any;
 
-  constructor(connectionStringOrPool:string|Pool ) {
+  constructor(connectionStringOrPool:string|Pool, options?:{cache?:ICache, context?:any}) {
     if (typeof connectionStringOrPool === 'string') {
       this.#pool = new Pool({
         connectionString: connectionStringOrPool,
       });
     } else {
       this.#pool = connectionStringOrPool;
+    }
+    if (options) {
+      this.#cache = options.cache;
+      this.#context = options.context;
     }
   }
   async create(name: string): Promise<Role> {
@@ -26,9 +33,18 @@ export default class PG_Role_Repository implements IRoleRepository {
  
   async findById(id: string): Promise<Role> {
     try {
+      if (this.#cache) {
+        const roledata = await this.#cache.get(`role.${id}`);
+        if (roledata) {
+          return new Role(roledata);
+        }
+      }
       const res = await this.#pool.query('SELECT id, name, display_name, description from roles WHERE id=$1',[id]);
       if (res.rowCount <=0) return null;
       const data = res.rows[0];
+      if (this.#cache) {
+        this.#cache.set(`role.${data.id}`, data)
+      }
       return new Role(data);
     } catch (ex) {
       // console.error(`error in findById(${id})`, ex);

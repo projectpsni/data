@@ -11,8 +11,8 @@ export default class User implements IModel {
   constructor(data:{id:string, email:string, name?:string, picture?:string, details?:object, roles?:string[]}){
     this.#id = data.id;
     this.email = data.email,
-    this.#name = data.name||null;
-    this.#picture = data.picture||null;
+    this.name = data.name||null;
+    this.picture = data.picture||null;
     this.details = data.details||{};
     this.#roles = data.roles||[];
   }

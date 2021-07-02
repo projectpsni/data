@@ -35,12 +35,13 @@ export default class PG_User_Repository implements IUserRepository {
         // TODO: does the the context have the right roles?
         return null;
       }
-      const res = await this.#pool.query('UPDATE users SET email=$1, name=$2 WHERE id=$3 RETURNING id, email, name', 
-        [user.email, user.name, user.id]);
+      const res = await this.#pool.query('UPDATE users SET email=$1, name=$2, picture=$3 WHERE id=$4 RETURNING id, email, name, picture', 
+        [user.email, user.name, user.picture, user.id]);
       if (res.rowCount===0) return null;
       const data = res.rows[0];
       user.name = data.name;
       user.email = data.email;
+      user.picture = data.picture;
       return user;
     } catch (ex) {
       console.error('error in update', ex);
@@ -57,7 +58,7 @@ export default class PG_User_Repository implements IUserRepository {
         }
       }
 
-      const res = await this.#pool.query(`SELECT id, name, email from users WHERE id=$1`, [id]);
+      const res = await this.#pool.query(`SELECT id, name, email, picture from users WHERE id=$1`, [id]);
       if (res.rowCount <=0) return null;
       const data = res.rows[0];
       const usr = new User(data);
@@ -72,13 +73,13 @@ export default class PG_User_Repository implements IUserRepository {
   }
 
   async findByEmail(emailpart: string): Promise<readonly User[]> {
-    const res = await this.#pool.query('SELECT id, name, email from users WHERE lower(email) LIKE $1', [`%${emailpart.toLocaleLowerCase()}%`]);
+    const res = await this.#pool.query('SELECT id, name, email, picture from users WHERE lower(email) LIKE $1', [`%${emailpart.toLocaleLowerCase()}%`]);
     const users:Array<User> = res.rows.map(data=>new User(data));
     return users;
   }
 
   async findByName(namepart: string): Promise<readonly User[]> {
-    const res = await this.#pool.query('SELECT id, name, email from users WHERE lower(name) LIKE $1', [`%${namepart.toLocaleLowerCase()}%`]);
+    const res = await this.#pool.query('SELECT id, name, email, picture from users WHERE lower(name) LIKE $1', [`%${namepart.toLocaleLowerCase()}%`]);
     const users:Array<User> = res.rows.map(data=>new User(data));
     return users;
   }

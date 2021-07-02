@@ -1,4 +1,3 @@
-import IUserRepository from "../src/user/user_repository";
 import PG_User_Repository from "../src/user/pg_user_repository";
 import getPool from './pool';
 import {v4 as uuid} from 'uuid';
@@ -7,45 +6,63 @@ import User from "../src/user/user";
 let cacheManager = require('cache-manager');
 
 const MOCKDB=!(process.env.TESTDB);
+let dbPool = getPool();
 
 describe("pg_user_repository", () => {
-  let repo:IUserRepository;
-  let pool:any;
-  const cache = cacheManager.caching({store: 'memory', ttl: 10/*seconds*/});
   const TABLENAME="users";
  
-  beforeAll(async()=>{
-    if (repo) return;
-    pool = getPool();
-    repo = new PG_User_Repository(pool, {cache});
+  const testObjs= async (data:{email:string, name?:string, picture?:string})=>{
+    let context = new User({id:uuid(), email: data.email, name: data.name});
+    const cache = cacheManager.caching({store: 'memory', ttl: 10/*seconds*/});
+    let someone:any = context.toJSON();
+    let pool = dbPool;
+    if (!MOCKDB) {
+      await dbPool.query('DELETE FROM users WHERE email = $1',[data.email.toLocaleLowerCase()])
+      const res=await dbPool.query('INSERT INTO users(email, name, picture) VALUES($1, $2, $3) RETURNING id, email, name, picture', 
+      [someone.email, someone.name, someone.picture]);
+      someone=res.rows[0];
+      context=new User(someone);
+    } else {
+      pool = getPool();
+    }
+    let repo = new PG_User_Repository(pool, {cache});
+    let repowithcontext= new PG_User_Repository(pool, {context});
+    return {someone, context, pool, cache, repo, repowithcontext};
+  }
+
+  beforeAll(async () => {
+    if (!MOCKDB) {
+      await dbPool.query(`DELETE FROM ${TABLENAME}`);
+    }
   });
 
   afterAll(async () => {
     if (!MOCKDB) {
-      await pool.query(`DELETE FROM ${TABLENAME}`);
-      await pool.end();
+      await dbPool.query(`DELETE FROM ${TABLENAME}`);
+      await dbPool.end();
     }
     jest.clearAllMocks();
   });
 
 
   describe("create",()=>{
-    const email = 'SomeOne@Create_example.com';
     beforeAll(async ()=>{
       if (!MOCKDB) {
-        await pool.query("DELETE FROM users WHERE email='someone@create_example.com'");
+        await dbPool.query("DELETE FROM users WHERE email LIKE '%@create_example.com'");
       }
     });
 
     afterAll(async ()=>{
       if (!MOCKDB) {
-        await pool.query("DELETE FROM users WHERE email='someone@create_example.com'");
+        await dbPool.query("DELETE FROM users WHERE email LIKE '%@create_example.com'");
       }
     });
 
     test("create user", async () => {
+      const {someone, pool, repo} = await testObjs({email:`${uuid()}@create_example.com`});
+      const email=`${uuid()}@Create_Example.com`;
       if (MOCKDB) {
-        pool.query.mockResolvedValueOnce({ rows: [{id:uuid(), email:email.toLocaleLowerCase(), name: null}], rowCount: 1 });
+        pool.query.mockResolvedValueOnce({ rows: [{...someone, email}], rowCount: 1 });
       }
       const usr = await repo.create(email)
       
@@ -57,21 +74,19 @@ describe("pg_user_repository", () => {
 
  
   describe('findByEmail',()=>{
-    let someone:any={id:uuid(), email:'someone@findbyemail_example.com', name: null};
     beforeAll(async ()=>{
       if (!MOCKDB) {
-        await pool.query('DELETE FROM users WHERE email=$1', [someone.email]);
-        const res=await pool.query('INSERT INTO users(email) VALUES($1) RETURNING id, email, name', [someone.email]);
-        someone=res.rows[0];
+        await dbPool.query("DELETE FROM users WHERE email LIKE '%@findbyemail_example.com'");
       }
     })
 
     afterAll(async ()=>{
       if (!MOCKDB) {
-        await pool.query('DELETE FROM users WHERE id=$1', [someone.id])
+        await dbPool.query("DELETE FROM users WHERE email LIKE '%@findbyemail_example.com'");
       }
     })
     test("find by email", async () => {
+      const {someone, pool, repo} = await testObjs({email:`${uuid()}@findbyemail_example.com`});
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [someone]});
       const usrs = await repo.findByEmail(someone.email.substr(0,5));
       expect(usrs.length).toBe(1);
@@ -80,6 +95,7 @@ describe("pg_user_repository", () => {
       expect(usrs[0].id).toBe(someone.id);
     });
     test("find by email should be caseinsensitive", async () => {
+      const {someone, pool, repo} = await testObjs({email:`${uuid()}@findbyemail_example.com`});
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [someone]});
       const usrs = await repo.findByEmail(someone.email.substr(2,5).toUpperCase());
       expect(usrs.length).toBe(1);
@@ -88,6 +104,7 @@ describe("pg_user_repository", () => {
       expect(usrs[0].id).toBe(someone.id);
     });
     test("find by email returns empty array when no matches", async () => {
+      const {pool, repo} = await testObjs({email:`${uuid()}@findbyemail_example.com`});
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
       const usrs = await repo.findByEmail('nonexistent@email.com');
       expect(usrs.length).toBe(0);
@@ -96,21 +113,19 @@ describe("pg_user_repository", () => {
 
 
   describe('findByName',()=>{
-    let someone:any={id:uuid(), email:'someone@findbyname_example.com', name: 'John Doe'};
     beforeAll(async ()=>{
       if (!MOCKDB) {
-        await pool.query('DELETE FROM users WHERE email=$1', [someone.email]);
-        const res=await pool.query('INSERT INTO users(email, name) VALUES($1, $2) RETURNING id, email, name', [someone.email, someone.name]);
-        someone=res.rows[0];
+        await dbPool.query("DELETE FROM users WHERE email LIKE '%@findbyname_example.com'");
       }
     })
 
     afterAll(async ()=>{
       if (!MOCKDB) {
-        await pool.query('DELETE FROM users WHERE id=$1', [someone.id])
+        await dbPool.query("DELETE FROM users WHERE email LIKE '%@findbyname_example.com'");
       }
     })
     test("find by name", async () => {
+      const {someone, pool, repo} = await testObjs({email:`${uuid()}@findbyname_example.com`, name: 'John Doe'});
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [someone]});
       const usrs = await repo.findByName(someone.name.substr(0,4));
       expect(usrs.length).toBe(1);
@@ -119,6 +134,7 @@ describe("pg_user_repository", () => {
       expect(usrs[0].id).toBe(someone.id);
     });
     test("find by name should be caseinsensitive", async () => {
+      const {someone, pool, repo} = await testObjs({email:`${uuid()}@findbyname_example.com`, name:'Insensitive User'});
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [someone]});
       const usrs = await repo.findByName(someone.name.substr(2,5).toUpperCase());
       expect(usrs.length).toBe(1);
@@ -127,6 +143,7 @@ describe("pg_user_repository", () => {
       expect(usrs[0].id).toBe(someone.id);
     });
     test("find by name returns empty array when no matches", async () => {
+      const {pool, repo} = await testObjs({email:`${uuid()}@findbyname_example.com`});
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
       const usrs = await repo.findByName('nonexistent');
       expect(usrs.length).toBe(0);
@@ -134,21 +151,19 @@ describe("pg_user_repository", () => {
   })
 
   describe('findById',()=>{
-    let someone:any={id:uuid(), email:'someone@findbyid_example.com', name: null};
     beforeAll(async ()=>{
       if (!MOCKDB) {
-        await pool.query('DELETE FROM users WHERE email=$1', [someone.email])
-        const res=await pool.query('INSERT INTO users(email, name) VALUES($1, $2) RETURNING id, email, name', [someone.email, someone.name]);
-        someone=res.rows[0];
+        await dbPool.query("DELETE FROM users WHERE email LIKE '%@findbyid_example.com'");
       }
     })
 
     afterAll(async ()=>{
       if (!MOCKDB) {
-        await pool.query('DELETE FROM users WHERE id=$1', [someone.id])
+        await dbPool.query("DELETE FROM users WHERE email LIKE '%@findbyid_example.com'");
       }
     })
     test("find by id returns matching user object", async () => {
+      const {someone, pool, cache, repo} = await testObjs({email:`${uuid()}@findbyid_example.com`});
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [someone], rowCount: 1 });
       const cachekey = `user.${someone.id}`;
       let cachedobject = await cache.get(cachekey);
@@ -162,11 +177,13 @@ describe("pg_user_repository", () => {
       await cache.del(cachekey);
     });
     test("find by id returns null when no matches", async () => {
+      const {pool, repo} = await testObjs({email:`${uuid()}@findbyid_example.com`});
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [], rowCount: 0 });
       const usr = await repo.findById('invalidid');
       expect(usr).toBeNull()
     });
     test("find by id returns matching user object from cache", async () => {
+      const {someone, cache, repo} = await testObjs({email:`${uuid()}@findbyid_example.com`});
       await cache.set(`user.cacheid`, someone);
       const usr = await repo.findById('cacheid');
       expect(usr.email).toBe(someone.email);
@@ -178,28 +195,17 @@ describe("pg_user_repository", () => {
 
 
   describe('update',()=>{
-    let repowithcontext:IUserRepository;
-    let context:User;
-    let someone:any;
-    beforeEach(async ()=>{
-      context = new User({id:uuid(), email:'actionuser@update_example.com', name:'Action User'});
-      someone = context.toJSON();
-      if (!MOCKDB) {
-        await pool.query('DELETE FROM users WHERE email=$1', [someone.email])
-        const res=await pool.query('INSERT INTO users(email, name) VALUES($1, $2) RETURNING id, email, name', 
-        [someone.email, someone.name]);
-        someone=res.rows[0];
-        context=new User(someone);
-      }
-      repowithcontext= new PG_User_Repository(pool, {context});
-    })
+    beforeAll(async ()=>{
+      await dbPool.query("DELETE FROM users WHERE email LIKE '%@update_example.com'");
+    });
 
-    afterEach(async ()=>{
+    afterAll(async ()=>{
       if (!MOCKDB) {
-        await pool.query('DELETE FROM users WHERE id=$1', [someone.id])
+        await dbPool.query("DELETE FROM users WHERE email LIKE '%@update_example.com'");
       }
     })
     test('update name without context should return null', async ()=>{
+      const {someone, pool, repo} = await testObjs({email:`${uuid()}@update_example.com`, name:'Update Name'});
       const newName = 'John Doe';
 
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [someone], rowCount: 1 });
@@ -213,11 +219,11 @@ describe("pg_user_repository", () => {
     });
 
     test('update name with context of same user', async ()=>{
+      const {someone, pool, repowithcontext} = await testObjs({email:`${uuid()}@update_example.com`});
       const newName = 'John Doe';
 
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [someone], rowCount: 1 });
       let usr = await repowithcontext.findById(someone.id);
-      
       usr.name = newName;
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [Object.assign({}, someone, {name: newName})], rowCount: 1 });
       usr= await repowithcontext.update(usr);
@@ -226,16 +232,19 @@ describe("pg_user_repository", () => {
       expect(usr.name).toBe(newName);
     });
     test('update name with context of diff user should fail', async ()=>{
+
+      const {someone, pool, repowithcontext} = await testObjs({email:`${uuid()}@update_example.com`});
+
       const newName = 'John Doe';
 
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [someone], rowCount: 1 });
-      let usr = await repo.findById(someone.id);
+      let usr = await repowithcontext.findById(someone.id);
       
       usr.name = newName;
 
-      let repowithcontext= new PG_User_Repository(pool, {context:new User({id: uuid(), email:'notme@example.com'})}); 
+      let repowithnewcontext= new PG_User_Repository(pool, {context:new User({id: uuid(), email:'notme@example.com'})}); 
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [Object.assign({},someone,{name: newName})], rowCount: 1 });
-      usr= await repowithcontext.update(usr);
+      usr= await repowithnewcontext.update(usr);
 
       expect(usr).toBeNull();
     });
@@ -255,10 +264,11 @@ describe("pg_user_repository", () => {
     // });
  
     test('update email', async ()=>{
+      const {someone, pool, repowithcontext} = await testObjs({email:`${uuid()}-ue@update_example.com`});
       const newEmail = 'JohnDoe@example.com';
 
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [someone], rowCount: 1 });
-      let usr = await repo.findById(someone.id);
+      let usr = await repowithcontext.findById(someone.id);
       usr.email = newEmail;
 
       if (MOCKDB) pool.query.mockResolvedValueOnce({ rows: [Object.assign({},someone,{email: newEmail.toLocaleLowerCase()})], rowCount: 1 });
